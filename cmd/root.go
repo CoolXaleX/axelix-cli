@@ -12,12 +12,11 @@ import (
 )
 
 var (
-	flagURL      string
-	flagUser     string
-	flagPassword string
-	flagJSON     bool
-	printer      *output.Printer
-	apiClient    *client.Client
+	flagURL     string
+	flagService string
+	flagJSON    bool
+	printer     *output.Printer
+	apiClient   *client.Client
 )
 
 var rootCmd = &cobra.Command{
@@ -26,18 +25,18 @@ var rootCmd = &cobra.Command{
 	SilenceErrors: true,
 	SilenceUsage:  true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		// Skip for config subcommands.
+		// config subcommands manage their own state — no client needed.
 		if cmd.Parent() != nil && cmd.Parent().Name() == "config" {
 			return nil
 		}
 		if cmd.Name() == "config" {
 			return nil
 		}
-		cfg := config.Resolve(flagURL, flagUser, flagPassword)
-		if cfg.URL == "" {
-			return fmt.Errorf("no URL — use --url or run 'axelix config set --url http://...'")
+		url, err := config.Resolve(flagURL, flagService)
+		if err != nil {
+			return err
 		}
-		apiClient = client.New(cfg.URL, cfg.Username, cfg.Password)
+		apiClient = client.New(url)
 		printer = output.NewPrinter(flagJSON)
 		return nil
 	},
@@ -52,8 +51,7 @@ func Execute() {
 }
 
 func init() {
-	rootCmd.PersistentFlags().StringVar(&flagURL, "url", "", "SBS app URL (e.g. http://localhost:8080)")
-	rootCmd.PersistentFlags().StringVar(&flagUser, "user", "", "Basic Auth username")
-	rootCmd.PersistentFlags().StringVar(&flagPassword, "password", "", "Basic Auth password")
+	rootCmd.PersistentFlags().StringVar(&flagURL, "url", "", "SBS app URL (overrides saved service)")
+	rootCmd.PersistentFlags().StringVar(&flagService, "service", "", "Named service from config (e.g. --service prod)")
 	rootCmd.PersistentFlags().BoolVar(&flagJSON, "json", false, "Output raw JSON")
 }

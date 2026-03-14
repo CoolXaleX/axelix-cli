@@ -2,29 +2,35 @@
 
 ## Configuration
 
+The CLI stores named services in `~/.axelix/config.json`. One service is marked as *current* and used by default.
+
 ```bash
-# Save URL (so you don't need --url every time)
-axelix config set --url http://localhost:8080
-axelix config set --url http://myapp:8080 --user admin --password secret
+# Add a service (first one added becomes current automatically)
+axelix config add local http://localhost:8080
+axelix config add staging http://staging.internal:8080
+axelix config add prod http://prod.internal:8080
 
-# Show current config
-axelix config show
+# Switch the active service
+axelix config use prod
+
+# List all services (✓ marks the active one)
+axelix config list
+
+# Remove a service
+axelix config remove staging
 ```
-
-**Alternatively via environment variables:** `AXELIX_URL`, `AXELIX_USER`, `AXELIX_PASSWORD`
-
-**Priority:** flag → env → `~/.axelix/config.json`
 
 ---
 
 ## Global Flags (available on all commands)
 
 ```bash
---url http://localhost:8080   # App URL with SBS embedded
---user admin                  # Basic Auth username
---password secret             # Basic Auth password
+--url http://localhost:8080   # One-off URL override (bypasses saved services)
+--service staging             # Use a specific named service for this call
 --json                        # Output raw JSON (useful for jq)
 ```
+
+**Priority:** `--url` → `AXELIX_URL` env var → `--service` → current service in config
 
 ---
 
@@ -55,8 +61,8 @@ axelix caches disable --manager cacheManager
 axelix caches enable  --manager cacheManager --cache myCache
 axelix caches disable --manager cacheManager --cache myCache
 
-# Clear all caches
-axelix caches clear
+# Clear all caches across all managers (requires explicit --all)
+axelix caches clear --all
 
 # Clear all caches in a manager
 axelix caches clear --manager cacheManager
@@ -64,7 +70,7 @@ axelix caches clear --manager cacheManager
 # Clear a specific cache
 axelix caches clear --manager cacheManager --cache myCache
 
-# Clear a specific key in a cache
+# Evict a single key from a cache
 axelix caches clear --manager cacheManager --cache myCache --key "user:42"
 ```
 
@@ -141,10 +147,10 @@ axelix gc log-file | grep "GC pause"
 ## Heap Dump
 
 ```bash
-# Download heap dump (live objects only by default)
+# Download heap dump (all objects, live and dead)
 axelix heap-dump
 
-# Include dead objects
+# Download heap dump with only live objects (smaller file, no GC-able objects)
 axelix heap-dump --live
 
 # Specify output path
@@ -152,7 +158,7 @@ axelix heap-dump --out /tmp/myapp.hprof
 axelix heap-dump --live --out ./dumps/heap-$(date +%s).hprof
 ```
 
-> File is saved locally, path is printed to stderr. `--json` has no effect on this command.
+> File is saved locally; path is printed to stderr. `--json` has no effect on this command.
 
 ---
 
@@ -171,7 +177,7 @@ axelix loggers set --name com.example.MyService --level DEBUG
 axelix loggers set --name ROOT --level WARN
 axelix loggers set --name com.example --level TRACE
 
-# Reset to default level (empty level)
+# Reset to default level (pass empty string)
 axelix loggers set --name com.example.MyService --level ""
 ```
 
@@ -235,7 +241,7 @@ axelix scheduled-tasks set-interval --trigger com.example.jobs.CleanupJob.run --
 axelix thread-dump get
 axelix thread-dump get --json | jq '.threads[] | select(.threadState == "BLOCKED")'
 
-# Enable contention monitoring (tracks lock wait/block time)
+# Enable contention monitoring (tracks lock wait/block time per thread)
 axelix thread-dump enable-contention
 
 # Disable contention monitoring
@@ -259,10 +265,20 @@ axelix transactions clear
 ## Common Scenarios
 
 ```bash
+# Work with multiple environments
+axelix config add local   http://localhost:8080
+axelix config add staging http://staging:8080
+axelix config add prod    http://prod:8080
+axelix config use staging
+
+axelix beans                          # hits staging
+axelix beans --service prod           # hits prod for this one call
+axelix beans --url http://other:8080  # hits arbitrary URL
+
 # Memory diagnosis
 axelix metrics get --name jvm.memory.used --tag area:heap
 axelix gc trigger
-axelix heap-dump --out ./heap.hprof
+axelix heap-dump --live --out ./heap.hprof
 
 # Enable DEBUG logging for a package, then restore
 axelix loggers set --name com.example.api --level DEBUG

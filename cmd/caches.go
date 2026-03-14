@@ -23,7 +23,6 @@ var cachesListCmd = &cobra.Command{
 			printer.JSON(feed)
 			return nil
 		}
-		headers := []string{"Manager", "Cache", "Target", "Enabled", "HasStats"}
 		var rows [][]string
 		for _, mgr := range feed.CacheManagers {
 			for _, c := range mgr.Caches {
@@ -36,7 +35,7 @@ var cachesListCmd = &cobra.Command{
 				})
 			}
 		}
-		printer.Table(headers, rows)
+		printer.Table([]string{"Manager", "Cache", "Target", "Enabled", "HasStats"}, rows)
 		return nil
 	},
 }
@@ -94,6 +93,7 @@ var cachesDisableCmd = &cobra.Command{
 }
 
 var (
+	cacheClearAll     bool
 	cacheClearManager string
 	cacheClearCache   string
 	cacheClearKey     string
@@ -102,9 +102,29 @@ var (
 var cachesClearCmd = &cobra.Command{
 	Use:   "clear",
 	Short: "Clear caches",
+	Long: `Clear caches.
+
+Scope is controlled by the combination of flags:
+  --all                         clear every cache across all managers
+  --manager M                   clear all caches in manager M
+  --manager M --cache C         clear cache C in manager M
+  --manager M --cache C --key K evict a single key from cache C`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := apiClient.ClearCaches(cacheClearManager, cacheClearCache, cacheClearKey); err != nil {
-			return err
+		switch {
+		case cacheClearAll:
+			if err := apiClient.ClearAllCaches(); err != nil {
+				return err
+			}
+		case cacheClearManager != "" && cacheClearCache != "":
+			if err := apiClient.ClearCache(cacheClearManager, cacheClearCache, cacheClearKey); err != nil {
+				return err
+			}
+		case cacheClearManager != "":
+			if err := apiClient.ClearManagerCaches(cacheClearManager); err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("specify --all to clear everything, or --manager (and optionally --cache / --key) to narrow the scope")
 		}
 		printer.Success("Caches cleared.")
 		return nil
@@ -118,21 +138,18 @@ func init() {
 	cachesGetCmd.MarkFlagRequired("cache")
 
 	cachesEnableCmd.Flags().StringVar(&cacheEnableManager, "manager", "", "Cache manager name")
-	cachesEnableCmd.Flags().StringVar(&cacheEnableCache, "cache", "", "Cache name (optional)")
+	cachesEnableCmd.Flags().StringVar(&cacheEnableCache, "cache", "", "Cache name (optional — omit to act on all caches in the manager)")
 	cachesEnableCmd.MarkFlagRequired("manager")
 
 	cachesDisableCmd.Flags().StringVar(&cacheDisableManager, "manager", "", "Cache manager name")
-	cachesDisableCmd.Flags().StringVar(&cacheDisableCache, "cache", "", "Cache name (optional)")
+	cachesDisableCmd.Flags().StringVar(&cacheDisableCache, "cache", "", "Cache name (optional — omit to act on all caches in the manager)")
 	cachesDisableCmd.MarkFlagRequired("manager")
 
-	cachesClearCmd.Flags().StringVar(&cacheClearManager, "manager", "", "Cache manager name (optional)")
-	cachesClearCmd.Flags().StringVar(&cacheClearCache, "cache", "", "Cache name (optional)")
-	cachesClearCmd.Flags().StringVar(&cacheClearKey, "key", "", "Cache key (optional)")
+	cachesClearCmd.Flags().BoolVar(&cacheClearAll, "all", false, "Clear every cache across all managers")
+	cachesClearCmd.Flags().StringVar(&cacheClearManager, "manager", "", "Cache manager name")
+	cachesClearCmd.Flags().StringVar(&cacheClearCache, "cache", "", "Cache name")
+	cachesClearCmd.Flags().StringVar(&cacheClearKey, "key", "", "Specific key to evict (requires --cache)")
 
-	cachesCmd.AddCommand(cachesListCmd)
-	cachesCmd.AddCommand(cachesGetCmd)
-	cachesCmd.AddCommand(cachesEnableCmd)
-	cachesCmd.AddCommand(cachesDisableCmd)
-	cachesCmd.AddCommand(cachesClearCmd)
+	cachesCmd.AddCommand(cachesListCmd, cachesGetCmd, cachesEnableCmd, cachesDisableCmd, cachesClearCmd)
 	rootCmd.AddCommand(cachesCmd)
 }

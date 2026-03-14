@@ -2,15 +2,15 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 )
 
-// Config holds connection settings for the Axelix SBS app.
+// Config holds all named services and the name of the currently active one.
 type Config struct {
-	URL      string `json:"url"`
-	Username string `json:"username"`
-	Password string `json:"password"`
+	Services map[string]string `json:"services"`
+	Current  string            `json:"current"`
 }
 
 func configPath() (string, error) {
@@ -22,6 +22,7 @@ func configPath() (string, error) {
 }
 
 // Load reads the config from ~/.axelix/config.json.
+// Returns an empty config (not an error) if the file does not exist yet.
 func Load() (*Config, error) {
 	path, err := configPath()
 	if err != nil {
@@ -30,13 +31,16 @@ func Load() (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return &Config{}, nil
+			return &Config{Services: map[string]string{}}, nil
 		}
 		return nil, err
 	}
 	cfg := &Config{}
 	if err := json.Unmarshal(data, cfg); err != nil {
 		return nil, err
+	}
+	if cfg.Services == nil {
+		cfg.Services = map[string]string{}
 	}
 	return cfg, nil
 }
@@ -57,37 +61,29 @@ func Save(cfg *Config) error {
 	return os.WriteFile(path, data, 0600)
 }
 
-// Resolve merges flag values, env vars, and the config file.
-// Priority: flag > env var > file.
-func Resolve(flagURL, flagUser, flagPass string) *Config {
-	file, _ := Load()
-	if file == nil {
-		file = &Config{}
+// Resolve returns the effective URL for the given session.
+// Priority: --url flag > AXELIX_URL env > --service flag > current service in config file.
+func Resolve(flagURL, flagService string) (string, error) {
+	if flagURL != "" {
+		return flagURL, nil
 	}
-
-	url := flagURL
-	if url == "" {
-		url = os.Getenv("AXELIX_URL")
+	if envURL := os.Getenv("AXELIX_URL"); envURL != "" {
+		return envURL, nil
 	}
-	if url == "" {
-		url = file.URL
+	cfg, err := Load()
+	if err != nil {
+		return "", err
 	}
-
-	user := flagUser
-	if user == "" {
-		user = os.Getenv("AXELIX_USER")
+	serviceName := flagService
+	if serviceName == "" {
+		serviceName = cfg.Current
 	}
-	if user == "" {
-		user = file.Username
+	if serviceName == "" {
+		return "", fmt.Errorf("no service selected — run 'axelix config use <name>' or use --url / --service")
 	}
-
-	pass := flagPass
-	if pass == "" {
-		pass = os.Getenv("AXELIX_PASSWORD")
+	url, ok := cfg.Services[serviceName]
+	if !ok {
+		return "", fmt.Errorf("service %q not found in config — run 'axelix config list' to see available services", serviceName)
 	}
-	if pass == "" {
-		pass = file.Password
-	}
-
-	return &Config{URL: url, Username: user, Password: pass}
+	return url, nil
 }

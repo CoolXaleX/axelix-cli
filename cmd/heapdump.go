@@ -34,7 +34,7 @@ var heapDumpCmd = &cobra.Command{
 }
 
 func init() {
-	heapDumpCmd.Flags().BoolVar(&heapDumpLive, "live", false, "Only dump live objects")
+	heapDumpCmd.Flags().BoolVar(&heapDumpLive, "live", false, "Dump only live objects (skip unreachable/GC-able objects)")
 	heapDumpCmd.Flags().StringVar(&heapDumpOut, "out", "", "Output file path (default: heapdump-<timestamp>.hprof)")
 	rootCmd.AddCommand(heapDumpCmd)
 }
