@@ -4,106 +4,93 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
+
+	"github.com/axelixlabs/axelix-cli/internal/client"
+	"github.com/axelixlabs/axelix-cli/internal/output"
 )
 
-var metricsCmd = &cobra.Command{
-	Use:   "metrics",
-	Short: "Inspect application metrics",
-}
+func newMetricsCmd(cl *client.Client, jsonFlag *bool) *cobra.Command {
+	metricsCmd := &cobra.Command{Use: "metrics", Short: "Inspect application metrics"}
 
-var metricsListCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List all metric groups",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		data, err := apiClient.GetMetrics()
-		if err != nil {
-			return err
-		}
-		if printer.IsJSON() {
-			printer.JSON(data)
-			return nil
-		}
-		// Try to parse the metricsGroups structure.
-		groups, ok := data["metricsGroups"].([]any)
-		if !ok {
-			printer.JSON(data)
-			return nil
-		}
-		headers := []string{"Group", "Metric", "Description"}
-		var rows [][]string
-		for _, g := range groups {
-			gMap, ok := g.(map[string]any)
+	metricsCmd.AddCommand(&cobra.Command{
+		Use:   "list",
+		Short: "List all metric groups",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			data, err := cl.GetMetrics()
+			if err != nil {
+				return err
+			}
+			pr := output.NewPrinter(*jsonFlag)
+			if pr.IsJSON() {
+				pr.JSON(data)
+				return nil
+			}
+			groups, ok := data["metricsGroups"].([]any)
 			if !ok {
-				continue
+				pr.JSON(data)
+				return nil
 			}
-			groupName, _ := gMap["groupName"].(string)
-			metrics, _ := gMap["metrics"].([]any)
-			for _, m := range metrics {
-				mMap, ok := m.(map[string]any)
+			var rows [][]string
+			for _, g := range groups {
+				gMap, ok := g.(map[string]any)
 				if !ok {
 					continue
 				}
-				name, _ := mMap["metricName"].(string)
-				desc, _ := mMap["description"].(string)
-				rows = append(rows, []string{groupName, name, desc})
+				groupName, _ := gMap["groupName"].(string)
+				metrics, _ := gMap["metrics"].([]any)
+				for _, m := range metrics {
+					mMap, ok := m.(map[string]any)
+					if !ok {
+						continue
+					}
+					name, _ := mMap["metricName"].(string)
+					desc, _ := mMap["description"].(string)
+					rows = append(rows, []string{groupName, name, desc})
+				}
 			}
-		}
-		printer.Table(headers, rows)
-		return nil
-	},
-}
-
-var (
-	metricGetName string
-	metricGetTag  string
-)
-
-var metricsGetCmd = &cobra.Command{
-	Use:   "get",
-	Short: "Get a single metric",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		data, err := apiClient.GetMetric(metricGetName, metricGetTag)
-		if err != nil {
-			return err
-		}
-		if printer.IsJSON() {
-			printer.JSON(data)
+			pr.Table([]string{"Group", "Metric", "Description"}, rows)
 			return nil
-		}
-		// Print name and description.
-		var pairs [][2]string
-		if name, ok := data["name"].(string); ok {
-			pairs = append(pairs, [2]string{"name", name})
-		}
-		if desc, ok := data["description"].(string); ok {
-			pairs = append(pairs, [2]string{"description", desc})
-		}
-		if baseUnit, ok := data["baseUnit"].(string); ok {
-			pairs = append(pairs, [2]string{"baseUnit", baseUnit})
-		}
-		// Print measurements.
-		if measurements, ok := data["measurements"].([]any); ok {
-			for _, m := range measurements {
-				mMap, ok := m.(map[string]any)
-				if !ok {
-					continue
-				}
-				stat, _ := mMap["statistic"].(string)
-				val := fmt.Sprintf("%v", mMap["value"])
-				pairs = append(pairs, [2]string{stat, val})
+		},
+	})
+
+	var getName, getTag string
+	getCmd := &cobra.Command{
+		Use:   "get",
+		Short: "Get a single metric",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			data, err := cl.GetMetric(getName, getTag)
+			if err != nil {
+				return err
 			}
-		}
-		printer.KV(pairs)
-		return nil
-	},
-}
+			pr := output.NewPrinter(*jsonFlag)
+			if pr.IsJSON() {
+				pr.JSON(data)
+				return nil
+			}
+			var pairs [][2]string
+			for _, key := range []string{"name", "description", "baseUnit"} {
+				if v, ok := data[key].(string); ok {
+					pairs = append(pairs, [2]string{key, v})
+				}
+			}
+			if measurements, ok := data["measurements"].([]any); ok {
+				for _, m := range measurements {
+					mMap, ok := m.(map[string]any)
+					if !ok {
+						continue
+					}
+					stat, _ := mMap["statistic"].(string)
+					pairs = append(pairs, [2]string{stat, fmt.Sprintf("%v", mMap["value"])})
+				}
+			}
+			pr.KV(pairs)
+			return nil
+		},
+	}
+	getCmd.Flags().StringVar(&getName, "name", "", "Metric name")
+	getCmd.Flags().StringVar(&getTag, "tag", "", "Tag filter in key:value format")
+	getCmd.MarkFlagRequired("name")
+	metricsCmd.AddCommand(getCmd)
 
-func init() {
-	metricsGetCmd.Flags().StringVar(&metricGetName, "name", "", "Metric name")
-	metricsGetCmd.Flags().StringVar(&metricGetTag, "tag", "", "Tag filter in key:value format")
-	metricsGetCmd.MarkFlagRequired("name")
-
-	metricsCmd.AddCommand(metricsListCmd)
-	metricsCmd.AddCommand(metricsGetCmd)
-	rootCmd.AddCommand(metricsCmd)
+	return metricsCmd
 }

@@ -2,15 +2,13 @@ package config
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 )
 
-// Config holds all named services and the name of the currently active one.
+// Config holds all named services.
 type Config struct {
 	Services map[string]string `json:"services"`
-	Current  string            `json:"current"`
 }
 
 func configPath() (string, error) {
@@ -32,6 +30,7 @@ func Load() (*Config, error) {
 	if err != nil {
 		if os.IsNotExist(err) {
 			return &Config{Services: map[string]string{}}, nil
+
 		}
 		return nil, err
 	}
@@ -61,29 +60,3 @@ func Save(cfg *Config) error {
 	return os.WriteFile(path, data, 0600)
 }
 
-// Resolve returns the effective URL for the given session.
-// Priority: --url flag > AXELIX_URL env > --service flag > current service in config file.
-func Resolve(flagURL, flagService string) (string, error) {
-	if flagURL != "" {
-		return flagURL, nil
-	}
-	if envURL := os.Getenv("AXELIX_URL"); envURL != "" {
-		return envURL, nil
-	}
-	cfg, err := Load()
-	if err != nil {
-		return "", err
-	}
-	serviceName := flagService
-	if serviceName == "" {
-		serviceName = cfg.Current
-	}
-	if serviceName == "" {
-		return "", fmt.Errorf("no service selected — run 'axelix config use <name>' or use --url / --service")
-	}
-	url, ok := cfg.Services[serviceName]
-	if !ok {
-		return "", fmt.Errorf("service %q not found in config — run 'axelix config list' to see available services", serviceName)
-	}
-	return url, nil
-}

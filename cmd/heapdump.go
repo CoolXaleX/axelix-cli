@@ -6,35 +6,34 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+
+	"github.com/axelixlabs/axelix-cli/internal/client"
 )
 
-var (
-	heapDumpLive bool
-	heapDumpOut  string
-)
+func newHeapDumpCmd(cl *client.Client) *cobra.Command {
+	var live bool
+	var outFile string
 
-var heapDumpCmd = &cobra.Command{
-	Use:   "heap-dump",
-	Short: "Download a heap dump",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		data, err := apiClient.DownloadHeapDump(heapDumpLive)
-		if err != nil {
-			return err
-		}
-		outFile := heapDumpOut
-		if outFile == "" {
-			outFile = fmt.Sprintf("heapdump-%d.hprof", time.Now().Unix())
-		}
-		if err := os.WriteFile(outFile, data, 0644); err != nil {
-			return err
-		}
-		fmt.Fprintf(os.Stderr, "Heap dump saved to %s\n", outFile)
-		return nil
-	},
-}
-
-func init() {
-	heapDumpCmd.Flags().BoolVar(&heapDumpLive, "live", false, "Dump only live objects (skip unreachable/GC-able objects)")
-	heapDumpCmd.Flags().StringVar(&heapDumpOut, "out", "", "Output file path (default: heapdump-<timestamp>.hprof)")
-	rootCmd.AddCommand(heapDumpCmd)
+	cmd := &cobra.Command{
+		Use:   "heap-dump",
+		Short: "Download a heap dump",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			data, err := cl.DownloadHeapDump(live)
+			if err != nil {
+				return err
+			}
+			path := outFile
+			if path == "" {
+				path = fmt.Sprintf("heapdump-%d.hprof", time.Now().Unix())
+			}
+			if err := os.WriteFile(path, data, 0644); err != nil {
+				return err
+			}
+			fmt.Fprintf(os.Stderr, "✓ heap dump saved to %s\n", path)
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&live, "live", false, "Dump only live objects (skip unreachable/GC-able objects)")
+	cmd.Flags().StringVar(&outFile, "out", "", "Output file path (default: heapdump-<timestamp>.hprof)")
+	return cmd
 }
